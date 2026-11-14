@@ -1,16 +1,5 @@
-<!doctype html>
-<html lang="it">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#11161A">
-<style>
-:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-body{margin:0;font-size:14px}
-img{max-width:100%}
-[hidden]{display:none!important}
-</style>
 <title>D&amp;D Alone</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&family=Alegreya+Sans+SC:wght@500;700&family=Pirata+One&display=swap">
@@ -47,8 +36,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .num{font-variant-numeric:tabular-nums}
 
 /* barra superiore */
-.top{display:flex;align-items:center;gap:10px;padding-block:12px;border-bottom:1px solid var(--line)}
-@media (max-width:560px){.top .camp{visibility:hidden}.top .btn{padding:5px 9px}}
+.top{display:flex;align-items:center;gap:12px;padding-block:12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .brand{font-family:var(--f-display);font-size:1.7rem;line-height:1;color:var(--ink);letter-spacing:.01em}
 .brand b{color:var(--rubric);font-weight:400}
 .top .camp{font-family:var(--f-body);font-style:italic;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
@@ -151,7 +139,6 @@ textarea.flash{animation:flash .9s ease-out}
 .story{display:flex;flex-direction:column;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
 .log{flex:1;min-height:0;overflow:auto;padding:22px clamp(16px,4vw,40px) 10px}
 .entry{margin:0 auto 18px;max-width:68ch}
-.entry{display:flow-root}
 .entry.dm{font-family:var(--f-body);font-size:1.13rem;line-height:1.62}
 .entry.dm p{margin:0 0 .8em}
 .entry.dm .ini{float:left;font-family:var(--f-display);font-size:3.6em;line-height:.82;color:var(--gild);padding:.06em .1em 0 0;margin-top:.04em}
@@ -228,14 +215,12 @@ textarea.flash{animation:flash .9s ease-out}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
-</head>
-<body>
+
 <div id="app">
   <header class="top">
     <div class="brand">D<b>&amp;</b>D Alone</div>
     <div class="camp" id="topCamp"></div>
-    <button class="btn sm ghost" id="btnHome" hidden>Campagne</button>
-    <button class="btn sm ghost" id="btnSettings" type="button">Impostazioni</button>
+    <button class="btn sm ghost" id="btnHome" hidden>Le mie campagne</button>
   </header>
 
   <!-- caricamento -->
@@ -253,11 +238,6 @@ textarea.flash{animation:flash .9s ease-out}
       <div class="sec"><h3>Campagne salvate</h3></div>
       <div class="camplist" id="campList"></div>
       <p class="muted" id="storeNote" style="font-size:.88rem;margin-top:12px"></p>
-      <div id="ioBox" style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn sm" type="button" id="btnExport">Esporta campagne</button>
-        <button class="btn sm" type="button" id="btnImport">Importa campagne</button>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
-      </div>
     </div>
   </section>
 
@@ -467,75 +447,6 @@ function sheetText(c){
 
 /* ============ Stato e archivio ============ */
 let SAMPLE=null, DB=null, UID=null, STORE="local";
-let MODE="api";   // "api" = GitHub Pages con chiave Anthropic; "claude" = dentro claude.ai
-
-/* ============ Cervello del DM: API Anthropic o Claude integrato ============ */
-const SETKEY="dnd-alone-impostazioni";
-const DEF_MODELS={quick:"claude-haiku-5-5", default:"claude-sonnet-5-5", complex:"claude-opus-5-5"};
-function loadSettings(){
-  let s={}; try{ s=JSON.parse(localStorage.getItem(SETKEY)||"{}")||{}; }catch(e){}
-  return {key:String(s.key||""), models:Object.assign({},DEF_MODELS,s.models||{})};
-}
-let SET=loadSettings();
-function saveSettings(){ try{ localStorage.setItem(SETKEY, JSON.stringify(SET)); }catch(e){ toast("Il browser non permette di salvare le impostazioni."); } }
-function parseJSONLoose(t){
-  try{ return JSON.parse(t); }catch(e){}
-  const f=t.match(/```(?:json)?\s*([\s\S]*?)```/); if(f){ try{ return JSON.parse(f[1]); }catch(e){} }
-  const a=t.search(/[{[]/), b=Math.max(t.lastIndexOf("}"),t.lastIndexOf("]"));
-  if(a>=0 && b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} }
-  throw {code:"invalid_json", text:t};
-}
-function normMessages(msgs){
-  const out=[];
-  msgs.forEach(x=>{ if(!x || !x.content) return; const last=out[out.length-1];
-    if(last && last.role===x.role) last.content+="\n\n"+x.content; else out.push({role:x.role, content:String(x.content)}); });
-  if(!out.length || out[0].role!=="user") out.unshift({role:"user", content:"Inizia."});
-  if(out[out.length-1].role!=="user") out.push({role:"user", content:"Prosegui."});
-  return out;
-}
-const AI = {
-  ready(){ return MODE==="claude" ? !!SAMPLE : !!SET.key; },
-  async json(input, o={}){
-    const inp = typeof input==="string" ? {system:"", messages:[{role:"user", content:input}]} : input;
-    if(MODE==="claude"){
-      const msgs = normMessages(inp.system ? [{role:"user", content:inp.system}, ...inp.messages] : inp.messages);
-      return SAMPLE.json(msgs, {modelTier:o.tier||"default", cache:false, signal:o.signal, onText:o.onText});
-    }
-    if(!SET.key) throw {code:"no_key"};
-    const sys = (inp.system ? inp.system+"\n\n" : "") + "Rispondi esclusivamente con JSON valido: niente testo prima o dopo, niente blocchi di codice.";
-    const body = {model:SET.models[o.tier||"default"]||DEF_MODELS.default, max_tokens:o.maxTokens||3000, stream:true,
-      system:[{type:"text", text:sys, cache_control:{type:"ephemeral"}}], messages:normMessages(inp.messages)};
-    let res;
-    try{
-      res = await fetch("https://api.anthropic.com/v1/messages", {method:"POST", signal:o.signal,
-        headers:{"content-type":"application/json","x-api-key":SET.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify(body)});
-    }catch(e){ throw {code: e && e.name==="AbortError" ? "cancelled" : "network"}; }
-    if(!res.ok){
-      let msg=""; try{ const j=await res.json(); msg=(j && j.error && j.error.message)||""; }catch(e){}
-      const code = (res.status===401||res.status===403) ? "bad_key" : res.status===429 ? "rate_limited" : res.status===529 ? "overloaded"
-        : (res.status===400 && /credit|balance/i.test(msg)) ? "no_credit" : ((res.status===400||res.status===404) && /model/i.test(msg)) ? "bad_model" : "upstream_error";
-      throw {code, message:msg};
-    }
-    const reader=res.body.getReader(), dec=new TextDecoder(); let buf="", text="";
-    try{
-      for(;;){
-        const {value, done} = await reader.read(); if(done) break;
-        buf += dec.decode(value, {stream:true}).replace(/\r\n/g,"\n");
-        let i;
-        while((i=buf.indexOf("\n\n"))>=0){
-          const chunk=buf.slice(0,i); buf=buf.slice(i+2);
-          const line=chunk.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
-          let ev; try{ ev=JSON.parse(line.slice(5)); }catch(e){ continue; }
-          if(ev.type==="content_block_delta" && ev.delta && ev.delta.type==="text_delta"){ text+=ev.delta.text; if(o.onText) o.onText({text}); }
-          else if(ev.type==="error") throw {code: ev.error && ev.error.type==="overloaded_error" ? "overloaded" : "upstream_error", message: ev.error && ev.error.message};
-        }
-      }
-    }catch(e){ if(e && e.name==="AbortError") throw {code:"cancelled"}; throw (e && e.code) ? e : {code:"network"}; }
-    return parseJSONLoose(text);
-  }
-};
-const KEY_ERRORS=["no_key","bad_key","bad_model","no_credit"];
 let G=null;          // campagna corrente
 let busy=false, autoChain=0, lastSend=null, ctl=null;
 const $ = s => document.querySelector(s);
@@ -586,13 +497,8 @@ async function delCampaign(id){
 /* ============ Home ============ */
 async function renderHome(){
   show("sHome"); $("#topCamp").textContent=""; G=null;
-  const nb=$("#noClaude");
-  if(MODE==="claude"){ nb.hidden=!!SAMPLE; nb.textContent="Per giocare serve Claude come Dungeon Master: consenti l'accesso quando te lo chiede."; }
-  else { nb.hidden=!!SET.key; nb.innerHTML='Per giocare serve la tua chiave API di Anthropic: il DM è Claude, che risponde tramite la chiave. <button class="btn sm primary" type="button" id="bannerKey" style="margin-left:6px">Inserisci la chiave</button>';
-    const bk=$("#bannerKey"); if(bk) bk.onclick=openSettings; }
-  $("#storeNote").textContent = STORE==="db" ? "Le campagne si salvano nel tuo account: le ritrovi da qualsiasi dispositivo."
-    : "Le campagne si salvano in questo browser. Per spostarle su un altro dispositivo usa Esporta e poi Importa.";
-  $("#ioBox").hidden = MODE==="claude";
+  $("#noClaude").hidden = !!SAMPLE;
+  $("#storeNote").textContent = STORE==="db" ? "Le campagne si salvano nel tuo account: le ritrovi da qualsiasi dispositivo." : "Le campagne si salvano solo in questo browser.";
   const box=$("#campList"); box.innerHTML='<p class="thinking"><span class="quill"></span>Carico…</p>';
   let list=[]; let t=setTimeout(()=>{ box.innerHTML='<div class="empty">L\'archivio non risponde ancora. Riprova tra poco.</div>'; },10000);
   try{ list = await listCampaigns(); }catch(e){ list = Object.values(lsAll()); }
@@ -812,7 +718,7 @@ $("#wizBack").onclick=()=>{ if(wStep>0){wStep--; renderWizard(); $("#sWizard").s
 $("#wizNext").onclick=()=>{
   const e=wizValid(); if(e){ toast(e); return; }
   if(wStep<STEPS.length-1){ wStep++; renderWizard(); $("#sWizard").scrollTop=0; return; }
-  if(!AI.ready()){ if(MODE==="api"){ openSettings(); toast("Inserisci prima la chiave API."); } else toast("Serve Claude come DM: consenti l'accesso."); return; }
+  if(!SAMPLE){ toast("Serve Claude come DM: apri la pagina da claude.ai."); return; }
   const pg = wizardChar();
   G = {id:"camp"+Date.now().toString(36), creato:Date.now(), aggiornato:Date.now(),
     impostazioni:{ambientazione:W.ambientazione, durata:W.durata, tono:W.tono, tier:W.tier},
@@ -832,13 +738,7 @@ function errMsg(e){
     refused:"Claude ha rifiutato questa richiesta. Prova a riformulare l'azione.",
     sampling_disabled:"Claude non è disponibile per questo account.",
     prompt_too_large:"La partita è diventata troppo lunga da inviare: riprova, verrà accorciata.",
-    cancelled:"Interrotto.",
-    no_key:"Manca la chiave API: inseriscila nelle Impostazioni.",
-    bad_key:"La chiave API non è valida o è stata revocata. Controllala nelle Impostazioni.",
-    bad_model:"Il modello indicato nelle Impostazioni non esiste o non è disponibile per la tua chiave.",
-    no_credit:"Il credito API è esaurito: ricaricalo su console.anthropic.com.",
-    overloaded:"I server di Claude sono sovraccarichi in questo momento. Riprova tra poco.",
-    network:"Connessione assente o interrotta. Controlla la rete e riprova."})[c] || "Il DM non ha risposto (errore di rete o del servizio).";
+    cancelled:"Interrotto."})[c] || "Il DM non ha risposto (errore di rete o del servizio).";
 }
 async function startForge(){
   show("sForge"); $("#forgeErr").hidden=true;
@@ -848,7 +748,7 @@ async function startForge(){
   try{
     if(!G.bibbia){
       render(0); $("#forgeCount").textContent="";
-      const r = await AI.json(promptBible(pg), {tier:"complex", maxTokens:16000, onText:({text})=>{ $("#forgeCount").textContent = `${text.length.toLocaleString("it-IT")} caratteri scritti`; }});
+      const r = await SAMPLE.json(promptBible(pg), {modelTier:"complex", cache:false, onText:({text})=>{ $("#forgeCount").textContent = `${text.length.toLocaleString("it-IT")} caratteri scritti`; }});
       if(!r || !r.bibbia || !r.titolo) throw {code:"invalid_json"};
       G.titolo = String(r.titolo); G.bibbia = r.bibbia;
       G.pubblico = {ambientazione:String(r.ambientazione_pubblica||""), luogo_iniziale:String(r.luogo_iniziale||"")};
@@ -856,7 +756,7 @@ async function startForge(){
     }
     if(G.party.length<2){
       render(1); $("#forgeCount").textContent="";
-      const r = await AI.json(promptParty(pg), {tier:"default", maxTokens:6000, onText:({text})=>{ $("#forgeCount").textContent = `${text.length.toLocaleString("it-IT")} caratteri scritti`; }});
+      const r = await SAMPLE.json(promptParty(pg), {modelTier:"default", cache:false, onText:({text})=>{ $("#forgeCount").textContent = `${text.length.toLocaleString("it-IT")} caratteri scritti`; }});
       const list = Array.isArray(r) ? r : (r && r.compagni);
       if(!Array.isArray(list) || !list.length) throw {code:"invalid_json"};
       list.slice(0,3).forEach((c,i)=>{
@@ -876,7 +776,6 @@ async function startForge(){
     $("#forgeErr").innerHTML = `<span>${esc(errMsg(e))}</span>`;
     const b=document.createElement("button"); b.className="btn sm"; b.textContent="Riprova"; b.onclick=startForge; $("#forgeErr").appendChild(b);
     const h=document.createElement("button"); h.className="btn sm ghost"; h.textContent="Torna alle campagne"; h.onclick=renderHome; $("#forgeErr").appendChild(h);
-    if(e && KEY_ERRORS.includes(e.code)){ const k=document.createElement("button"); k.className="btn sm ghost"; k.textContent="Apri impostazioni"; k.onclick=openSettings; $("#forgeErr").appendChild(k); }
   }
 }
 function promptBible(pg){
@@ -1105,9 +1004,10 @@ ${G.diario.length?G.diario.map((x,i)=>`${i+1}. ${x}`).join("\n"):"(appena inizia
 }
 function buildInput(){
   const turns = G.turni.slice(-14);
-  const msgs=[{role:"user", content: stateBlock()}];
+  const msgs=[{role:"user", content: dmRules()+"\n\n"+stateBlock()}];
   turns.forEach(t=>msgs.push({role:t.role, content:t.content}));
-  return {system: dmRules(), messages: msgs};
+  if(msgs[msgs.length-1].role!=="user") msgs.push({role:"user", content:"Prosegui."});
+  return msgs;
 }
 
 /* estrazione parziale della narrazione durante lo streaming */
@@ -1125,7 +1025,7 @@ function partialField(raw, key){
 }
 
 async function sendToDM(content, opt){
-  if(!AI.ready()){ showTurnErr({code: MODE==="claude"?"not_granted":"no_key"}, content, opt); return; }
+  if(!SAMPLE){ showTurnErr({code:"not_granted"}, content, opt); return; }
   $("#turnErr").hidden=true;
   G.turni.push({role:"user", content});
   lastSend={content,opt};
@@ -1135,7 +1035,7 @@ async function sendToDM(content, opt){
   $("#log").appendChild(live); scrollLog();
   ctl=new AbortController();
   try{
-    const r = await AI.json(buildInput(), {tier:G.impostazioni.tier||"default", maxTokens:3000, signal:ctl.signal,
+    const r = await SAMPLE.json(buildInput(), {modelTier:G.impostazioni.tier||"default", cache:false, signal:ctl.signal,
       onText:({text})=>{ const n=partialField(text,"narrazione"); if(n){ live.innerHTML=md(n); scrollLog(); } }});
     live.remove();
     if(!r || typeof r.narrazione!=="string") throw {code:"invalid_json"};
@@ -1153,7 +1053,6 @@ function showTurnErr(e, content, opt){
   const box=$("#turnErr"); box.hidden=false; box.innerHTML=`<span>${esc(errMsg(e))}</span>`;
   const b=document.createElement("button"); b.className="btn sm"; b.textContent="Riprova";
   b.onclick=()=>{ box.hidden=true; sendToDM(content,opt); }; box.appendChild(b);
-  if(e && KEY_ERRORS.includes(e.code)){ const k=document.createElement("button"); k.className="btn sm ghost"; k.textContent="Apri impostazioni"; k.onclick=openSettings; box.appendChild(k); }
 }
 
 function findMember(name){
@@ -1339,90 +1238,10 @@ function openSheet(c){
 }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ const o=document.querySelector(".overlay"); if(o) o.remove(); } });
 
-/* ============ Impostazioni ============ */
-function openSettings(){
-  document.querySelectorAll(".overlay").forEach(x=>x.remove());
-  const o=document.createElement("div"); o.className="overlay";
-  if(MODE==="claude"){
-    o.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="Impostazioni"><div style="display:flex;justify-content:space-between;gap:10px"><h2>Impostazioni</h2><button class="btn sm" id="setClose">Chiudi</button></div>
-      <p>Stai giocando dentro Claude: il DM usa il tuo account e non serve nessuna chiave.</p></div>`;
-  } else {
-    o.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="Impostazioni">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><h2>Impostazioni</h2><button class="btn sm" id="setClose">Chiudi</button></div>
-      <div class="sec" style="margin-top:8px"><h3>Chiave API di Anthropic</h3></div>
-      <p>Il Dungeon Master è Claude e risponde tramite la tua chiave. Ogni turno costa pochi centesimi, addebitati sul tuo account API.
-        Crea la chiave su <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>, alla voce API Keys.</p>
-      <div class="field"><label class="lbl" for="setKey">chiave</label>
-        <div style="display:flex;gap:8px"><input id="setKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" style="flex:1;min-width:0">
-        <button class="btn sm" type="button" id="setShow">Mostra</button></div></div>
-      <p class="muted" style="font-size:.88rem">La chiave resta salvata solo in questo browser e viene inviata soltanto ad api.anthropic.com. Non inserirla su computer condivisi. Puoi revocarla dalla console in qualsiasi momento.</p>
-      <div class="sec" style="margin-top:14px"><h3>Modelli</h3></div>
-      <div class="row2">
-        <div class="field"><label class="lbl" for="setMq">dm rapido</label><input id="setMq"></div>
-        <div class="field"><label class="lbl" for="setMd">dm bilanciato</label><input id="setMd"></div>
-        <div class="field"><label class="lbl" for="setMc">dm profondo e campagna</label><input id="setMc"></div>
-      </div>
-      <p class="muted" style="font-size:.88rem">La campagna viene scritta con il modello "profondo". Cambia questi nomi solo se Anthropic rilascia modelli nuovi.</p>
-      <div id="setMsg" class="muted" style="min-height:1.4em;margin:8px 0"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn ghost" type="button" id="setReset">Modelli predefiniti</button>
-        <button class="btn" type="button" id="setTest">Prova la chiave</button>
-        <button class="btn primary" type="button" id="setSave">Salva</button>
-      </div></div>`;
-  }
-  o.addEventListener("click",e=>{ if(e.target===o) o.remove(); });
-  $("#overlayRoot").appendChild(o);
-  o.querySelector("#setClose").onclick=()=>o.remove();
-  if(MODE==="claude") return;
-  const key=o.querySelector("#setKey"), mq=o.querySelector("#setMq"), md0=o.querySelector("#setMd"), mc=o.querySelector("#setMc"), msg=o.querySelector("#setMsg");
-  key.value=SET.key; mq.value=SET.models.quick; md0.value=SET.models.default; mc.value=SET.models.complex;
-  const collect=()=>({key:key.value.trim(), models:{quick:mq.value.trim()||DEF_MODELS.quick, default:md0.value.trim()||DEF_MODELS.default, complex:mc.value.trim()||DEF_MODELS.complex}});
-  o.querySelector("#setShow").onclick=e=>{ key.type = key.type==="password"?"text":"password"; e.target.textContent = key.type==="password"?"Mostra":"Nascondi"; };
-  o.querySelector("#setReset").onclick=()=>{ mq.value=DEF_MODELS.quick; md0.value=DEF_MODELS.default; mc.value=DEF_MODELS.complex; };
-  o.querySelector("#setSave").onclick=()=>{ SET=collect(); saveSettings(); o.remove(); toast("Impostazioni salvate"); if(!$("#sHome").hidden) renderHome(); };
-  o.querySelector("#setTest").onclick=async e=>{
-    const btn=e.target, prev=SET; SET=collect(); btn.disabled=true; msg.className="muted"; msg.textContent="Provo la chiave…";
-    try{
-      const r = await AI.json('Rispondi solo con questo JSON: {"ok": true}', {tier:"quick", maxTokens:30});
-      msg.className=""; msg.style.color="var(--good)"; msg.textContent = r && r.ok ? "La chiave funziona. Ricordati di premere Salva." : "La chiave risponde. Ricordati di premere Salva.";
-    }catch(err){ msg.className="err"; msg.style.color=""; msg.textContent=errMsg(err); }
-    finally{ SET=prev; btn.disabled=false; }
-  };
-  key.focus();
-}
-$("#btnSettings").onclick=openSettings;
-
-/* ============ Esporta / importa ============ */
-$("#btnExport").onclick=()=>{
-  const all=lsAll(); const n=Object.keys(all).length;
-  if(!n){ toast("Non ci sono campagne da esportare."); return; }
-  const blob=new Blob([JSON.stringify({app:"dnd-alone", versione:1, esportato:new Date().toISOString(), campagne:all})],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download=`dnd-alone-campagne-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
-  toast(n===1?"Esportata 1 campagna":`Esportate ${n} campagne`);
-};
-$("#btnImport").onclick=()=>$("#importFile").click();
-$("#importFile").onchange=async e=>{
-  const f=e.target.files && e.target.files[0]; e.target.value=""; if(!f) return;
-  try{
-    const data=JSON.parse(await f.text()); const list=data && data.campagne ? Object.values(data.campagne) : null;
-    if(!list || !list.length) throw 0;
-    const all=lsAll(); let n=0;
-    list.forEach(st=>{ if(!st || !st.id || !Array.isArray(st.party)) return;
-      if(!all[st.id] || (st.aggiornato||0) >= (all[st.id].aggiornato||0)){ all[st.id]=st; n++; } });
-    localStorage.setItem(LSKEY, JSON.stringify(all));
-    toast(n ? (n===1?"Importata 1 campagna":`Importate ${n} campagne`) : "Le campagne del file sono già presenti, in una versione uguale o più recente.");
-    renderHome();
-  }catch(err){ toast("Il file non è un'esportazione valida di D&D Alone."); }
-};
-
 /* ============ Avvio ============ */
 async function boot(){
   const cl = window.claude;
-  try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
   if(cl && cl.use){
-    MODE="claude";
     try{ SAMPLE = await cl.use("sample"); }catch(e){ SAMPLE=null; }
     try{ DB = await cl.use("db"); const U = await cl.use("user"); UID = U ? await U.id() : null; }catch(e){ DB=null; }
     if(DB && UID) STORE="db";
@@ -1432,6 +1251,3 @@ async function boot(){
 boot();
 })();
 </script>
-
-</body>
-</html>
